@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
@@ -15,9 +16,16 @@ import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.File
 import org.jetbrains.plugins.gradle.util.GradleConstants
+import java.lang.IllegalStateException
 import javax.xml.parsers.DocumentBuilderFactory
 
 class ModuleLoaderAction : AnAction() {
+
+    private val logger = PluginLogger()
+
+    init {
+        logger.setLevel(PluginLogger.DebugLevel.DEBUG)
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         if (e.project == null) {
@@ -27,6 +35,7 @@ class ModuleLoaderAction : AnAction() {
         val project = e.project!!
         val virtualFiles = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)
         if (virtualFiles == null) {
+            logger.info("virtual files from action null")
             NotificationManager.notifyWarn(project, "No file associated with selection!")
             return
         }
@@ -54,19 +63,22 @@ class ModuleLoaderAction : AnAction() {
     }
 
     private fun toggleModules(project: Project, selectedModules: List<String>, allModulesPath: List<String>) {
-        val modules = selectedModules.mapNotNull {
+        val resolvedModules = resolveNestedModules(selectedModules, allModulesPath)
+        val modules = resolvedModules.mapNotNull {
             ModuleManager.getInstance(project)
                 .findModuleByName(it)
         }
         if (modules.isEmpty()) {
+            logger.debug("no modules found, trying to load modules: $resolvedModules")
             val unloadedModulesPath = allModulesPath.filter { modulePath ->
-                selectedModules.find {
+                resolvedModules.find {
                     modulePath.contains(it)
                 } != null
             }
-            loadModules(project, selectedModules, unloadedModulesPath)
+            loadModules(project, resolvedModules, unloadedModulesPath)
         } else {
-            if (modules.size != selectedModules.size) {
+            logger.debug("modules already loaded, trying to unload modules: $modules")
+            if (modules.size != resolvedModules.size) {
                 NotificationManager.notifyWarn(project, "Combination of both loaded and unloaded modules not supported!")
                 return
             }
@@ -74,10 +86,35 @@ class ModuleLoaderAction : AnAction() {
         }
     }
 
+    private fun resolveNestedModules(selectedModules: List<String>, allModulesPath: List<String>): List<String> {
+        val resolvedModules = mutableListOf<String>()
+        selectedModules.forEach { selectedModule ->
+            // resolve nested modules if present
+            val matchedModules = allModulesPath.filter {
+                it.contains(selectedModule)
+            }.toMutableList()
+            if (matchedModules.size == 1) {
+                logger.debug("no nested modules found: $selectedModule")
+                resolvedModules.add(selectedModule)
+            } else {
+                logger.debug("found nested modules, resolving $selectedModule")
+                val processedModules = matchedModules.map {
+                    val name = it.substring(it.lastIndexOf(File.separator) + 1, (it.length - 4))
+                    name
+                }.toMutableList()
+                processedModules.remove(selectedModule)
+                resolvedModules.addAll(processedModules)
+                logger.debug("resolved modules: $processedModules")
+            }
+        }
+
+        return resolvedModules
+    }
+
     private fun unLoadModules(project: Project, modules: List<Module>) {
         // unload the module from the project
-        println("unloading modules")
         val unloadedModuleNames = modules.map {
+            println("unloading modules: $it")
             it.name
         }
         ModuleManager.getInstance(project).setUnloadedModules(unloadedModuleNames)
@@ -99,6 +136,10 @@ class ModuleLoaderAction : AnAction() {
         })
     }
 
+    private fun getSettingsFilePath(project: Project): String {
+        return "${project.basePath}${File.separator}settings.gradle"
+    }
+
     private fun processModuleAction(
         project: Project,
         modules: List<String>,
@@ -106,10 +147,18 @@ class ModuleLoaderAction : AnAction() {
         onComplete: () -> Unit
     ) {
         val settingFile = VirtualFileManager.getInstance()
-            .refreshAndFindFileByNioPath(File("${project.basePath}${File.separator}settings.gradle").toPath())
+            .getFileSystem("file")
+            .refreshAndFindFileByPath(getSettingsFilePath(project))
         if (settingFile == null) {
             NotificationManager.notifyError(project, "Failed to locate settings.gradle file!")
             return
+        }
+        // check for any open editors and warn users if this file is already open
+        val isSettingFileOpen = FileEditorManager.getInstance(project).getAllEditors(settingFile)
+        if (isSettingFileOpen.isNotEmpty()) {
+            NotificationManager.notifyWarn(project, "Settings.gradle file is already open, this might cause IDE to " +
+                    "request gradle sync even if we had already done gradle sync internally. From next time try to close the " +
+                    "file before performing this action.")
         }
         // sanitize the modules name
         val sanitizedNames = modules.map {
@@ -132,8 +181,10 @@ class ModuleLoaderAction : AnAction() {
             }
             writer.close()
         }
-        onComplete()
-        triggerGradleSync(project)
+        settingFile.refresh(true, false) {
+            onComplete()
+            triggerGradleSync(project)
+        }
     }
 
     private fun loadModules(project: Project, selectedModules: List<String>, modulesPath: List<String>) {
@@ -143,7 +194,8 @@ class ModuleLoaderAction : AnAction() {
         }
         modulesPath.forEach {
             runWriteAction {
-                ModuleManager.getInstance(project).loadModule(File(it).toPath())
+                ModuleManager.getInstance(project).loadModule(it)
+                logger.debug("loading module: $it")
             }
         }
         val loadedModules = ModuleManager.getInstance(project).modules
@@ -169,6 +221,7 @@ class ModuleLoaderAction : AnAction() {
     }
 
     private fun triggerGradleSync(project: Project) {
+        logger.debug("initiating gradle sync")
         ExternalSystemUtil.refreshProject(project, GradleConstants.SYSTEM_ID, project.basePath!!, false, ProgressExecutionMode.IN_BACKGROUND_ASYNC)
     }
 
@@ -177,12 +230,13 @@ class ModuleLoaderAction : AnAction() {
             ModuleRootManager.getInstance(module)
                 .excludeRoots
                 .forEach {
+                    logger.debug("cleaning build for ${module.name}")
                     // remove if this is the build directory
                     if (it.path.endsWith("build")) {
                         if (File(it.path).deleteRecursively()) {
-                            println("removed directory: ${it.path}")
+                            logger.debug("removed directory: ${it.path}")
                         } else {
-                            println("failed to remove directory: ${it.path}")
+                            logger.debug("failed to remove directory: ${it.path}")
                         }
                     }
                 }
@@ -204,10 +258,10 @@ class ModuleLoaderAction : AnAction() {
                 val element = node as Element
                 val filePath = element.getAttribute("filepath")
                     .replace("\$PROJECT_DIR\$", project.basePath!!)
-                println("filePath: $filePath")
                 modulesPath.add(filePath)
             }
         }
+        logger.debug("resolved modules path from modules.xml: \n $modulesPath")
 
         return modulesPath
     }

@@ -34,8 +34,9 @@ runIde {
 
 // See https://github.com/JetBrains/gradle-intellij-plugin/
 intellij {
-    version '2020.3.1'
+    version '201.8743.12'
     plugins = ["gradle"]
+    alternativeIdePath '/opt/android-studio-custom/'
 }
 patchPluginXml {
     changeNotes """

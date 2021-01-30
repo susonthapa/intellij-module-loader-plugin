@@ -1,16 +1,16 @@
 <idea-plugin>
     <id>np.com.susanthapa.ModuleLoader</id>
-    <name>Plugin display name here</name>
-    <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
+    <name>TogMod</name>
+    <vendor email="susanthapa202@gmail.com">Susan Thapa</vendor>
 
     <description><![CDATA[
-    Enter short description for your plugin here.<br>
-    <em>most HTML tags may be used</em>
+        Plugin to toggle (load / unload) modules along with uncomment / comment modules in settings.gradle file
     ]]></description>
 
     <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->
     <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.gradle</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- Add your extensions here -->
@@ -19,12 +19,8 @@
     <actions>
         <action id="np.com.susanthapa.plugin.module_loader.ModuleLoaderAction"
                 class="np.com.susanthapa.plugin.module_loader.ModuleLoaderAction" text="Toggle Module"
-                description="Load / unload modules">
-            <add-to-group group-id="ProjectViewPopupMenu" anchor="first"/>
+                description="Load / Unload modules with sync">
+            <add-to-group group-id="ProjectViewPopupMenuSettingsGroup" anchor="first"/>
         </action>
     </actions>
-
-    <extensions defaultExtensionNs="com.intellij">
-        <notificationGroup id="Module Loader Group" displayType="BALLOON" key="notification.group.name"/>
-    </extensions>
 </idea-plugin>
