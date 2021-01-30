@@ -114,9 +114,16 @@ class ModuleLoaderAction : AnAction() {
     private fun unLoadModules(project: Project, modules: List<Module>) {
         // unload the module from the project
         val unloadedModuleNames = modules.map {
-            println("unloading modules: $it")
             it.name
-        }
+        }.toMutableList()
+        val requestedModuleCount = unloadedModuleNames.size
+        logger.debug("requested modules to unloaded: $unloadedModuleNames")
+        val previouslyUnloadedModules = ModuleManager.getInstance(project).unloadedModuleDescriptions.map {
+            it.name
+        }.filter { !unloadedModuleNames.contains(it) }
+        logger.debug("previously unloaded modules: $previouslyUnloadedModules")
+        unloadedModuleNames.addAll(previouslyUnloadedModules)
+        logger.debug("unloading modules: $unloadedModuleNames")
         ModuleManager.getInstance(project).setUnloadedModules(unloadedModuleNames)
         val modulesNames = modules.map { it.name }
         processModuleAction(project, modulesNames, { module, sanitizedNames ->
@@ -132,7 +139,7 @@ class ModuleLoaderAction : AnAction() {
                 }
             }
         }, {
-            NotificationManager.notifyInformation(project, "Unloaded ${unloadedModuleNames.size} modules")
+            NotificationManager.notifyInformation(project, "Unloaded $requestedModuleCount modules")
         })
     }
 
