@@ -12,12 +12,9 @@ import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.vfs.VirtualFileManager
-import org.w3c.dom.Element
-import org.w3c.dom.Node
+import np.com.susanthapa.plugin.module_loader.settings.TogModState
 import java.io.File
 import org.jetbrains.plugins.gradle.util.GradleConstants
-import java.lang.IllegalStateException
-import javax.xml.parsers.DocumentBuilderFactory
 
 class ModuleLoaderAction : AnAction() {
 
@@ -41,7 +38,8 @@ class ModuleLoaderAction : AnAction() {
         }
 
         // obtain the selected modules fully qualified name
-        val allModulesPath = getModulesPathFromXml(project)
+        val allModulesPath = Utils.getModulesPathFromXml(project)
+        logger.debug("resolved modules path from modules.xml: \n $allModulesPath")
         val selectedModules = virtualFiles.mapNotNull {
             val path = it.path
             val modulePath = path.replace(project.basePath!!, "")
@@ -79,7 +77,10 @@ class ModuleLoaderAction : AnAction() {
         } else {
             logger.debug("modules already loaded, trying to unload modules: $modules")
             if (modules.size != resolvedModules.size) {
-                NotificationManager.notifyWarn(project, "Combination of both loaded and unloaded modules not supported!")
+                NotificationManager.notifyWarn(
+                    project,
+                    "Combination of both loaded and unloaded modules not supported!"
+                )
                 return
             }
             unLoadModules(project, modules)
@@ -98,10 +99,7 @@ class ModuleLoaderAction : AnAction() {
                 resolvedModules.add(selectedModule)
             } else {
                 logger.debug("found nested modules, resolving $selectedModule")
-                val processedModules = matchedModules.map {
-                    val name = it.substring(it.lastIndexOf(File.separator) + 1, (it.length - 4))
-                    name
-                }.toMutableList()
+                val processedModules = Utils.getModulesNameFromPath(matchedModules).toMutableList()
                 processedModules.remove(selectedModule)
                 resolvedModules.addAll(processedModules)
                 logger.debug("resolved modules: $processedModules")
@@ -153,44 +151,65 @@ class ModuleLoaderAction : AnAction() {
         mapper: (String, List<String>) -> String,
         onComplete: () -> Unit
     ) {
-        val settingFile = VirtualFileManager.getInstance()
-            .getFileSystem("file")
-            .refreshAndFindFileByPath(getSettingsFilePath(project))
-        if (settingFile == null) {
-            NotificationManager.notifyError(project, "Failed to locate settings.gradle file!")
-            return
-        }
-        // check for any open editors and warn users if this file is already open
-        val isSettingFileOpen = FileEditorManager.getInstance(project).getAllEditors(settingFile)
-        if (isSettingFileOpen.isNotEmpty()) {
-            NotificationManager.notifyWarn(project, "Settings.gradle file is already open, this might cause IDE to " +
-                    "request gradle sync even if we had already done gradle sync internally. From next time try to close the " +
-                    "file before performing this action.")
-        }
-        // sanitize the modules name
-        val sanitizedNames = modules.map {
-            val name = if (it.contains(project.name)) {
-                it.replace(project.name, "")
-                    .replace(".", ":")
-            } else {
-                it.replace(".", ":")
+        val settings = TogModState.getInstance(project).state
+        if (settings.isSettingsFileEnabled) {
+            val settingFile = VirtualFileManager.getInstance()
+                .getFileSystem("file")
+                .refreshAndFindFileByPath(getSettingsFilePath(project))
+            if (settingFile == null) {
+                NotificationManager.notifyError(project, "Failed to locate settings.gradle file!")
+                return
             }
-            name
-        }
-        val updatedContent = settingFile.inputStream.bufferedReader().readLines()
-            .map { module -> mapper(module, sanitizedNames) }
+            // check for any open editors and warn users if this file is already open
+            val isSettingFileOpen = FileEditorManager.getInstance(project).getAllEditors(settingFile)
+            if (isSettingFileOpen.isNotEmpty()) {
+                NotificationManager.notifyWarn(
+                    project, "Settings.gradle file is already open, this might cause IDE to " +
+                            "request gradle sync even if we had already done gradle sync internally. From next time try to close the " +
+                            "file before performing this action."
+                )
+            }
+            logger.debug("requested modules to toggle: $modules")
+            // sanitize the modules name
+            val sanitizedNames = modules
+                .filter {
+                    !settings.excludedModulesList.contains(it)
+                }.map {
+                    val name = if (it.contains(project.name)) {
+                        it.replace(project.name, "")
+                            .replace(".", ":")
+                    } else {
+                        it.replace(".", ":")
+                    }
+                    name
+                }
+            logger.debug("modules after apply exclusion: $sanitizedNames")
+            if (sanitizedNames.isEmpty()) {
+                logger.debug("modules after exclusion list is empty, aborting settings.gradle file update!")
+                return
+            }
+            val updatedContent = settingFile.inputStream.bufferedReader().readLines()
+                .map { module -> mapper(module, sanitizedNames) }
 
-        runWriteAction {
-            val writer = settingFile.getOutputStream(this).bufferedWriter()
-            updatedContent.forEach {
-                writer.write(it)
-                writer.newLine()
+            runWriteAction {
+                val writer = settingFile.getOutputStream(this).bufferedWriter()
+                updatedContent.forEach {
+                    writer.write(it)
+                    writer.newLine()
+                }
+                writer.close()
             }
-            writer.close()
-        }
-        settingFile.refresh(true, false) {
+            settingFile.refresh(true, false) {
+                onComplete()
+                if (settings.isGradleSyncEnabled) {
+                    triggerGradleSync(project)
+                }
+            }
+        } else {
             onComplete()
-            triggerGradleSync(project)
+            if (settings.isGradleSyncEnabled) {
+                triggerGradleSync(project)
+            }
         }
     }
 
@@ -229,7 +248,13 @@ class ModuleLoaderAction : AnAction() {
 
     private fun triggerGradleSync(project: Project) {
         logger.debug("initiating gradle sync")
-        ExternalSystemUtil.refreshProject(project, GradleConstants.SYSTEM_ID, project.basePath!!, false, ProgressExecutionMode.IN_BACKGROUND_ASYNC)
+        ExternalSystemUtil.refreshProject(
+            project,
+            GradleConstants.SYSTEM_ID,
+            project.basePath!!,
+            false,
+            ProgressExecutionMode.IN_BACKGROUND_ASYNC
+        )
     }
 
     private fun cleanBuild(modules: List<Module>) {
@@ -248,28 +273,5 @@ class ModuleLoaderAction : AnAction() {
                     }
                 }
         }
-    }
-
-    private fun getModulesPathFromXml(project: Project): List<String> {
-        val modulesPath = mutableListOf<String>()
-        val moduleXml = File("${project.basePath}/.idea/modules.xml")
-        val doc = DocumentBuilderFactory.newInstance()
-            .newDocumentBuilder()
-            .parse(moduleXml)
-
-        doc.documentElement.normalize()
-        val modules = doc.getElementsByTagName("module")
-        for (i in 0 until modules.length) {
-            val node = modules.item(i)
-            if (node.nodeType == Node.ELEMENT_NODE) {
-                val element = node as Element
-                val filePath = element.getAttribute("filepath")
-                    .replace("\$PROJECT_DIR\$", project.basePath!!)
-                modulesPath.add(filePath)
-            }
-        }
-        logger.debug("resolved modules path from modules.xml: \n $modulesPath")
-
-        return modulesPath
     }
 }

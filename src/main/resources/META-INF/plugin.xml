@@ -13,7 +13,11 @@
     <depends>org.jetbrains.plugins.gradle</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Add your extensions here -->
+        <projectService serviceImplementation="np.com.susanthapa.plugin.module_loader.settings.TogModState"/>
+        <projectConfigurable parentId="tools"
+                             instance="np.com.susanthapa.plugin.module_loader.settings.TogModConfigurable"
+                             id="np.com.susanthapa.plugin.module_loader.settings.TogModConfigurable"
+                             displayName="TogMod"/>
     </extensions>
 
     <actions>
