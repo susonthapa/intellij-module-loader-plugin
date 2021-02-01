@@ -26,6 +26,7 @@ class TogModComponent {
         mainPanel.layout = BoxLayout(mainPanel, BoxLayout.Y_AXIS)
 
         settingsCheckbox = JBCheckBox("Comment / Uncomment module from settings.gradle")
+        settingsCheckbox.border = EmptyBorder(0, 0, 0, 0)
         settingsCheckbox.horizontalAlignment = JLabel.LEFT
         gradleSyncCheckbox = JBCheckBox("Trigger gradle sync after module toggle")
         tableModel = object : DefaultTableModel() {

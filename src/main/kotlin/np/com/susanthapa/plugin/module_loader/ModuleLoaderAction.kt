@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
+import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.module.Module
@@ -13,6 +14,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.vfs.VirtualFileManager
 import np.com.susanthapa.plugin.module_loader.settings.TogModState
+import org.jetbrains.plugins.gradle.settings.GradleSettings
 import java.io.File
 import org.jetbrains.plugins.gradle.util.GradleConstants
 
@@ -22,6 +24,13 @@ class ModuleLoaderAction : AnAction() {
 
     init {
         logger.setLevel(PluginLogger.DebugLevel.DEBUG)
+    }
+
+    override fun update(e: AnActionEvent) {
+        if (GradleSettings.getInstance(e.project!!).linkedProjectsSettings.isEmpty()) {
+            logger.warn("this is not a gradle project, disabling the action")
+            e.presentation.isVisible = false
+        }
     }
 
     override fun actionPerformed(e: AnActionEvent) {
