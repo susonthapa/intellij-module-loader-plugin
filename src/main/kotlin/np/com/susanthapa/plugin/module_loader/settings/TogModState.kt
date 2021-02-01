@@ -27,12 +27,10 @@ class TogModState : PersistentStateComponent<TogModState.State> {
     }
 
     override fun getState(): State {
-        println("getting state: $state")
         return state
     }
 
     override fun loadState(state: State) {
-        println("loading state: $state")
         this.state = state
     }
 }
