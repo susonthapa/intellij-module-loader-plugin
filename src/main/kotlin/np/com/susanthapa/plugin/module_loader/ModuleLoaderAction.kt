@@ -169,6 +169,15 @@ class ModuleLoaderAction : AnAction() {
                 NotificationManager.notifyError(project, "Failed to locate settings.gradle file!")
                 return
             }
+            // check for any open editors and warn users if this file is already open
+            val isSettingFileOpen = FileEditorManager.getInstance(project).getAllEditors(settingFile)
+            if (isSettingFileOpen.isNotEmpty()) {
+                NotificationManager.notifyWarn(
+                    project, "Settings.gradle file is already open, this might cause IDE to " +
+                            "request gradle sync even if we had already done gradle sync internally. From next time try to close the " +
+                            "file before performing this action."
+                )
+            }
             logger.debug("requested modules to toggle: $modules")
             // sanitize the modules name
             val sanitizedNames = modules
@@ -185,6 +194,10 @@ class ModuleLoaderAction : AnAction() {
                 }
             logger.debug("modules after apply exclusion: $sanitizedNames")
             if (sanitizedNames.isEmpty()) {
+                onComplete()
+                if (settings.isGradleSyncEnabled) {
+                    triggerGradleSync(project)
+                }
                 logger.debug("modules after exclusion list is empty, aborting settings.gradle file update!")
                 return
             }
