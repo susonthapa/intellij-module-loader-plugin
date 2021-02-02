@@ -23,7 +23,7 @@ class ModuleLoaderAction : AnAction() {
     private val logger = PluginLogger()
 
     init {
-        logger.setLevel(PluginLogger.DebugLevel.DEBUG)
+        logger.setLevel(PluginLogger.DebugLevel.PRODUCTION)
     }
 
     override fun update(e: AnActionEvent) {
@@ -169,15 +169,6 @@ class ModuleLoaderAction : AnAction() {
                 NotificationManager.notifyError(project, "Failed to locate settings.gradle file!")
                 return
             }
-            // check for any open editors and warn users if this file is already open
-            val isSettingFileOpen = FileEditorManager.getInstance(project).getAllEditors(settingFile)
-            if (isSettingFileOpen.isNotEmpty()) {
-                NotificationManager.notifyWarn(
-                    project, "Settings.gradle file is already open, this might cause IDE to " +
-                            "request gradle sync even if we had already done gradle sync internally. From next time try to close the " +
-                            "file before performing this action."
-                )
-            }
             logger.debug("requested modules to toggle: $modules")
             // sanitize the modules name
             val sanitizedNames = modules
@@ -207,11 +198,12 @@ class ModuleLoaderAction : AnAction() {
                     writer.newLine()
                 }
                 writer.close()
-            }
-            settingFile.refresh(true, false) {
-                onComplete()
-                if (settings.isGradleSyncEnabled) {
-                    triggerGradleSync(project)
+
+                settingFile.refresh(true, false) {
+                    onComplete()
+                    if (settings.isGradleSyncEnabled) {
+                        triggerGradleSync(project)
+                    }
                 }
             }
         } else {

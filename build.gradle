@@ -5,7 +5,7 @@ plugins {
 }
 
 group 'np.com.susanthapa'
-version '0.6'
+version '0.7'
 
 repositories {
     mavenCentral()
@@ -40,7 +40,7 @@ intellij {
 }
 patchPluginXml {
     changeNotes """
-        Added nested modules support with proper logging 
+        Settings added with UI improvements and some minor bugfixes
       """
 }
 test {

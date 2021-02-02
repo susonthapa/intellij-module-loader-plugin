@@ -7,8 +7,7 @@ import com.intellij.openapi.project.Project
 
 @State(
     name = "np.com.susanthapa.plugin.module_loader.settings.TogModState",
-    storages = [Storage("TogModSettings.xml")],
-    reportStatistic = true
+    storages = [Storage("TogModSettings.xml")]
 )
 class TogModState : PersistentStateComponent<TogModState.State> {
 
