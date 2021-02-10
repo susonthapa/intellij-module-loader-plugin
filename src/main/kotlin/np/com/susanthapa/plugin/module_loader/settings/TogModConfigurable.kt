@@ -1,7 +1,5 @@
 package np.com.susanthapa.plugin.module_loader.settings
 
-import com.intellij.ide.DataManager
-import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
 import np.com.susanthapa.plugin.module_loader.TogModule
@@ -25,6 +23,8 @@ class TogModConfigurable constructor(
         val settings = TogModState.getInstance(project).state
         val isGradleSyncModified = togModComponent.getGradleSyncCheckbox().isSelected != settings.isGradleSyncEnabled
         val isSettingsFileModified = togModComponent.getSettingsCheckbox().isSelected != settings.isSettingsFileEnabled
+        val isCleanBuildModified = togModComponent.getCleanBuildCheckbox().isSelected != settings.isCleanBuildEnabled
+
         var isExclusionListModified = false
         for (i in 0 until togModComponent.getExcludedTable().model.rowCount) {
             val togMod = TogModule(
@@ -45,7 +45,7 @@ class TogModConfigurable constructor(
             }
         }
 
-        return isGradleSyncModified || isSettingsFileModified || isExclusionListModified
+        return isGradleSyncModified || isSettingsFileModified || isCleanBuildModified || isExclusionListModified
     }
 
     override fun apply() {
@@ -63,6 +63,7 @@ class TogModConfigurable constructor(
         val newState = settings.state.copy(
             isGradleSyncEnabled = togModComponent.getGradleSyncCheckbox().isSelected,
             isSettingsFileEnabled = togModComponent.getSettingsCheckbox().isSelected,
+            isCleanBuildEnabled = togModComponent.getCleanBuildCheckbox().isSelected,
             excludedModulesList = exclusionList
         )
         settings.loadState(newState)
@@ -72,6 +73,7 @@ class TogModConfigurable constructor(
         val settings = TogModState.getInstance(project).state
         togModComponent.setGradleSyncStatus(settings.isGradleSyncEnabled)
         togModComponent.setSettingsStatus(settings.isSettingsFileEnabled)
+        togModComponent.setCleanBuildStatus(settings.isCleanBuildEnabled)
         // convert exclusion list to TodMod list
         val togModules = Utils.getModuleNamesFromXml(project).map {
             val isModuleExcluded = settings.excludedModulesList.contains(it)

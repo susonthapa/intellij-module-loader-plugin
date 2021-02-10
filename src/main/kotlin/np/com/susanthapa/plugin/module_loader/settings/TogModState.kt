@@ -14,6 +14,7 @@ class TogModState : PersistentStateComponent<TogModState.State> {
     data class State(
         var isGradleSyncEnabled: Boolean = false,
         var isSettingsFileEnabled: Boolean = false,
+        var isCleanBuildEnabled: Boolean = false,
         var excludedModulesList: List<String> = listOf()
     )
 

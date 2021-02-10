@@ -20,6 +20,7 @@ class TogModComponent {
     private val mainPanel = JBPanel<BorderLayoutPanel>()
     private val gradleSyncCheckbox: JBCheckBox
     private val settingsCheckbox: JBCheckBox
+    private val cleanBuildCheckbox: JBCheckBox
     private val excludedTable: JBTable
     private val tableModel: DefaultTableModel
 
@@ -28,6 +29,7 @@ class TogModComponent {
 
         settingsCheckbox = JBCheckBox("Comment / Uncomment module from settings.gradle")
         gradleSyncCheckbox = JBCheckBox("Trigger gradle sync after module toggle")
+        cleanBuildCheckbox = JBCheckBox("Clean project after loading modules")
         val exclusionLabel = JBLabel("Exclude any modules that you don't want to comment / uncomment in settings.gradle file");
         tableModel = object : DefaultTableModel() {
             override fun isCellEditable(row: Int, column: Int): Boolean {
@@ -71,6 +73,7 @@ class TogModComponent {
         // setup alignment
         gradleSyncCheckbox.alignmentX = Component.LEFT_ALIGNMENT
         settingsCheckbox.alignmentX = Component.LEFT_ALIGNMENT
+        cleanBuildCheckbox.alignmentX = Component.LEFT_ALIGNMENT
         exclusionLabel.alignmentX = Component.LEFT_ALIGNMENT
         scrollPane.alignmentX = Component.LEFT_ALIGNMENT
 
@@ -83,6 +86,8 @@ class TogModComponent {
         mainPanel.add(gradleSyncCheckbox)
         mainPanel.add(Box.createRigidArea(Dimension(0, 4)))
         mainPanel.add(settingsCheckbox)
+        mainPanel.add(Box.createRigidArea(Dimension(0, 4)))
+        mainPanel.add(cleanBuildCheckbox)
         mainPanel.add(Box.createRigidArea(Dimension(0, 16)))
         mainPanel.add(exclusionLabel)
         mainPanel.add(Box.createRigidArea(Dimension(0, 8)))
@@ -97,6 +102,10 @@ class TogModComponent {
         return settingsCheckbox
     }
 
+    fun getCleanBuildCheckbox(): JBCheckBox {
+        return cleanBuildCheckbox
+    }
+
     fun getExcludedTable(): JBTable {
         return excludedTable
     }
@@ -107,6 +116,10 @@ class TogModComponent {
 
     fun setSettingsStatus(isEnabled: Boolean) {
         settingsCheckbox.isSelected = isEnabled
+    }
+
+    fun setCleanBuildStatus(isEnabled: Boolean) {
+        cleanBuildCheckbox.isSelected = isEnabled
     }
 
     fun setAllModules(modules: List<TogModule>) {

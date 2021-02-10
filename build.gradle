@@ -5,16 +5,13 @@ plugins {
 }
 
 group 'np.com.susanthapa'
-version '0.7'
+version '0.8'
 
 repositories {
     mavenCentral()
 }
 
-java {
-    sourceCompatibility JavaVersion.VERSION_1_8
-    targetCompatibility JavaVersion.VERSION_1_8
-}
+sourceCompatibility = 1.8
 
 configure([compileKotlin, compileTestKotlin]) {
     kotlinOptions {
@@ -35,12 +32,12 @@ runIde {
 // See https://github.com/JetBrains/gradle-intellij-plugin/
 intellij {
     version '201.8743.12'
-    plugins = ["gradle"]
+    plugins = ["gradle", "android"]
     alternativeIdePath '/opt/android-studio-custom/'
 }
 patchPluginXml {
     changeNotes """
-        Settings added with UI improvements and some minor bugfixes
+        Added option to trigger clean build, gradle sync not picked up by IDE fixes
       """
 }
 test {

@@ -1,5 +1,9 @@
 package np.com.susanthapa.plugin.module_loader
 
+import com.android.tools.idea.gradle.project.build.GradleProjectBuilder
+import com.android.tools.idea.gradle.project.sync.GradleSyncInvoker
+import com.android.tools.idea.gradle.task.AndroidGradleTaskManager
+import com.google.wireless.android.sdk.stats.GradleSyncStats
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -230,11 +234,9 @@ class ModuleLoaderAction : AnAction() {
                 logger.debug("loading module: $it")
             }
         }
-        val loadedModules = ModuleManager.getInstance(project).modules
-            .filter {
-                selectedModules.contains(it.name)
-            }
-        cleanBuild(loadedModules)
+        if (TogModState.getInstance(project).state.isCleanBuildEnabled) {
+            cleanBuild(project)
+        }
         processModuleAction(project, selectedModules, { module, sanitizedNames ->
             if (module.startsWith("//")) {
                 // check if this module needs to be loaded
@@ -254,30 +256,11 @@ class ModuleLoaderAction : AnAction() {
 
     private fun triggerGradleSync(project: Project) {
         logger.debug("initiating gradle sync")
-        ExternalSystemUtil.refreshProject(
-            project,
-            GradleConstants.SYSTEM_ID,
-            project.basePath!!,
-            false,
-            ProgressExecutionMode.IN_BACKGROUND_ASYNC
-        )
+        GradleSyncInvoker.getInstance().requestProjectSync(project, GradleSyncStats.Trigger.TRIGGER_PROJECT_MODIFIED)
     }
 
-    private fun cleanBuild(modules: List<Module>) {
-        modules.forEach { module ->
-            ModuleRootManager.getInstance(module)
-                .excludeRoots
-                .forEach {
-                    logger.debug("cleaning build for ${module.name}")
-                    // remove if this is the build directory
-                    if (it.path.endsWith("build")) {
-                        if (File(it.path).deleteRecursively()) {
-                            logger.debug("removed directory: ${it.path}")
-                        } else {
-                            logger.debug("failed to remove directory: ${it.path}")
-                        }
-                    }
-                }
-        }
+    private fun cleanBuild(project: Project) {
+        logger.debug("initialing clean build")
+        GradleProjectBuilder.getInstance(project).clean()
     }
 }
