@@ -2,6 +2,7 @@
     <id>np.com.susanthapa.ModuleLoader</id>
     <name>TogMod</name>
     <vendor email="susanthapa202@gmail.com">Susan Thapa</vendor>
+    <idea-version since-build="201.*" until-build="206.*"/>
 
     <description><![CDATA[
         Plugin to toggle (load / unload) modules along with uncomment / comment modules in settings.gradle file

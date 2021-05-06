@@ -5,7 +5,7 @@ plugins {
 }
 
 group 'np.com.susanthapa'
-version '0.8'
+version '0.8.1'
 
 repositories {
     mavenCentral()
@@ -31,7 +31,8 @@ runIde {
 
 // See https://github.com/JetBrains/gradle-intellij-plugin/
 intellij {
-    version '201.8743.12'
+    updateSinceUntilBuild = false
+    version '203.8084.24'
     plugins = ["gradle", "android"]
     alternativeIdePath '/opt/android-studio-custom/'
 }
