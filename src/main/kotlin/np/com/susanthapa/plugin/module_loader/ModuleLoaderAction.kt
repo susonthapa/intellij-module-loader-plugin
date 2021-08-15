@@ -2,25 +2,18 @@ package np.com.susanthapa.plugin.module_loader
 
 import com.android.tools.idea.gradle.project.build.GradleProjectBuilder
 import com.android.tools.idea.gradle.project.sync.GradleSyncInvoker
-import com.android.tools.idea.gradle.task.AndroidGradleTaskManager
 import com.google.wireless.android.sdk.stats.GradleSyncStats
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.runWriteAction
-import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
-import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
-import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.vfs.VirtualFileManager
 import np.com.susanthapa.plugin.module_loader.settings.TogModState
 import org.jetbrains.plugins.gradle.settings.GradleSettings
 import java.io.File
-import org.jetbrains.plugins.gradle.util.GradleConstants
+import java.util.logging.Logger
 
 class ModuleLoaderAction : AnAction() {
 
@@ -57,7 +50,7 @@ class ModuleLoaderAction : AnAction() {
             val path = it.path
             val modulePath = path.replace(project.basePath!!, "")
                 .replace(File.separator, ".")
-            "${project.name}$modulePath"
+            ("${project.name}$modulePath")
         }.filter { name ->
             val isModulePresent = allModulesPath.find { it.contains(name) } != null
             if (!isModulePresent) {
@@ -75,29 +68,52 @@ class ModuleLoaderAction : AnAction() {
 
     private fun toggleModules(project: Project, selectedModules: List<String>, allModulesPath: List<String>) {
         val resolvedModules = resolveNestedModules(selectedModules, allModulesPath)
-        val modules = resolvedModules.mapNotNull {
-            ModuleManager.getInstance(project)
-                .findModuleByName(it)
-        }
-        if (modules.isEmpty()) {
-            logger.debug("no modules found, trying to load modules: $resolvedModules")
-            val unloadedModulesPath = allModulesPath.filter { modulePath ->
-                resolvedModules.find {
+        val appModules = resolvedModules.mapNotNull {
+            val module = ModuleManager.getInstance(project).findModuleByName(it)
+            val isModuleLoaded = module != null
+            if (isModuleLoaded) {
+                AppModule(module!!.name, it, isModuleLoaded)
+            } else {
+                val path = allModulesPath.find { modulePath ->
                     modulePath.contains(it)
-                } != null
+                }
+                if (path == null) {
+                    null
+                } else {
+                    AppModule(path, it, isModuleLoaded)
+                }
             }
-            loadModules(project, resolvedModules, unloadedModulesPath)
-        } else {
-            logger.debug("modules already loaded, trying to unload modules: $modules")
-            if (modules.size != resolvedModules.size) {
-                NotificationManager.notifyWarn(
-                    project,
-                    "Combination of both loaded and unloaded modules not supported!"
-                )
-                return
-            }
-            unLoadModules(project, modules)
         }
+
+        val loadingModules = appModules.filter { !it.isLoaded }
+        val unloadingModules = appModules.filter { it.isLoaded }
+
+        if (loadingModules.isNotEmpty()) {
+            // load modules
+            logger.debug("loading modules: $loadingModules")
+            loadModules(project, loadingModules)
+        }
+
+        if (unloadingModules.isNotEmpty()) {
+            // unload modules
+            logger.debug("unloading modules: $unloadingModules")
+            unLoadModules(project, unloadingModules)
+        }
+
+        processModuleAction(project, appModules, { modulePath, appModule ->
+            if (appModule.isLoaded) {
+                "//$modulePath"
+            } else {
+                modulePath.substring(2)
+            }
+        }, {
+            if (loadingModules.isNotEmpty()) {
+                NotificationManager.notifyInformation(project, "Loaded ${loadingModules.size} modules")
+            }
+            if (unloadingModules.isNotEmpty()) {
+                NotificationManager.notifyInformation(project, "Unloading ${unloadingModules.size} modules")
+            }
+        })
     }
 
     private fun resolveNestedModules(selectedModules: List<String>, allModulesPath: List<String>): List<String> {
@@ -122,12 +138,11 @@ class ModuleLoaderAction : AnAction() {
         return resolvedModules
     }
 
-    private fun unLoadModules(project: Project, modules: List<Module>) {
+    private fun unLoadModules(project: Project, modules: List<AppModule>) {
         // unload the module from the project
         val unloadedModuleNames = modules.map {
-            it.name
+            it.identifier
         }.toMutableList()
-        val requestedModuleCount = unloadedModuleNames.size
         logger.debug("requested modules to unloaded: $unloadedModuleNames")
         val previouslyUnloadedModules = ModuleManager.getInstance(project).unloadedModuleDescriptions.map {
             it.name
@@ -136,22 +151,30 @@ class ModuleLoaderAction : AnAction() {
         unloadedModuleNames.addAll(previouslyUnloadedModules)
         logger.debug("unloading modules: $unloadedModuleNames")
         ModuleManager.getInstance(project).setUnloadedModules(unloadedModuleNames)
-        val modulesNames = modules.map { it.name }
-        processModuleAction(project, modulesNames, { module, sanitizedNames ->
-            if (module.startsWith("//")) {
-                module
-            } else {
-                // check if this module needs to be unloaded
-                val isModulePresent = sanitizedNames.find { module.contains(it) } != null
-                if (isModulePresent) {
-                    "//$module"
-                } else {
-                    module
+    }
+
+    private fun loadModules(project: Project, modules: List<AppModule>) {
+        if (modules.isEmpty()) {
+            NotificationManager.notifyError(project, "Failed to load modules, module path is invalid")
+            return
+        }
+        modules.forEach {
+            val path = VirtualFileManager.getInstance()
+                .getFileSystem("file")
+                .refreshAndFindFileByPath(it.identifier)
+                ?.toNioPath()
+            if (path != null) {
+                runWriteAction {
+                    ModuleManager.getInstance(project).loadModule(path)
+                    logger.debug("loading module: $it")
                 }
+            } else {
+                logger.warn("failed to resolve path for module: $it")
             }
-        }, {
-            NotificationManager.notifyInformation(project, "Unloaded $requestedModuleCount modules")
-        })
+        }
+        if (TogModState.getInstance(project).state.isCleanBuildEnabled) {
+            cleanBuild(project)
+        }
     }
 
     private fun getSettingsFilePath(project: Project): String {
@@ -160,8 +183,8 @@ class ModuleLoaderAction : AnAction() {
 
     private fun processModuleAction(
         project: Project,
-        modules: List<String>,
-        mapper: (String, List<String>) -> String,
+        modules: List<AppModule>,
+        mapper: (String, AppModule) -> String,
         onComplete: () -> Unit
     ) {
         val settings = TogModState.getInstance(project).state
@@ -175,20 +198,20 @@ class ModuleLoaderAction : AnAction() {
             }
             logger.debug("requested modules to toggle: $modules")
             // sanitize the modules name
-            val sanitizedNames = modules
+            val sanitizedModules = modules
                 .filter {
-                    !settings.excludedModulesList.contains(it)
+                    !settings.excludedModulesList.contains(it.identifier)
                 }.map {
-                    val name = if (it.contains(project.name)) {
-                        it.replace(project.name, "")
+                    val name = if (it.name.contains(project.name)) {
+                        it.name.replace(project.name, "")
                             .replace(".", ":")
                     } else {
-                        it.replace(".", ":")
+                        it.name.replace(".", ":")
                     }
-                    name
+                    it.copy(identifier = name)
                 }
-            logger.debug("modules after apply exclusion: $sanitizedNames")
-            if (sanitizedNames.isEmpty()) {
+            logger.debug("modules after apply exclusion: $sanitizedModules")
+            if (sanitizedModules.isEmpty()) {
                 onComplete()
                 if (settings.isGradleSyncEnabled) {
                     triggerGradleSync(project)
@@ -197,7 +220,15 @@ class ModuleLoaderAction : AnAction() {
                 return
             }
             val updatedContent = settingFile.inputStream.bufferedReader().readLines()
-                .map { module -> mapper(module, sanitizedNames) }
+                .map { module ->
+                    // find the referenced AppModule
+                    val appModule = sanitizedModules.find { module.contains(it.identifier) }
+                    if (appModule != null) {
+                        mapper(module, appModule)
+                    } else {
+                        module
+                    }
+                }
 
             runWriteAction {
                 val writer = settingFile.getOutputStream(this).bufferedWriter()
@@ -221,37 +252,6 @@ class ModuleLoaderAction : AnAction() {
                 triggerGradleSync(project)
             }
         }
-    }
-
-    private fun loadModules(project: Project, selectedModules: List<String>, modulesPath: List<String>) {
-        if (modulesPath.isEmpty()) {
-            NotificationManager.notifyError(project, "Failed to load modules, module path is invalid")
-            return
-        }
-        modulesPath.forEach {
-            runWriteAction {
-                ModuleManager.getInstance(project).loadModule(it)
-                logger.debug("loading module: $it")
-            }
-        }
-        if (TogModState.getInstance(project).state.isCleanBuildEnabled) {
-            cleanBuild(project)
-        }
-        processModuleAction(project, selectedModules, { module, sanitizedNames ->
-            if (module.startsWith("//")) {
-                // check if this module needs to be loaded
-                val isModuleUnloaded = sanitizedNames.find { module.contains(it) } != null
-                if (isModuleUnloaded) {
-                    module.substring(2)
-                } else {
-                    module
-                }
-            } else {
-                module
-            }
-        }, {
-            NotificationManager.notifyInformation(project, "Loaded ${modulesPath.size} modules")
-        })
     }
 
     private fun triggerGradleSync(project: Project) {
